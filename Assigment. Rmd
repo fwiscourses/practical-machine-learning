@@ -1,0 +1,222 @@
+---
+title: "Practical Machine Learning Assigment"
+author: "Diana Garcia"
+date: '2022-08-04'
+output: html_document
+---
+
+# Predicting the exercise
+
+One thing that people regularly do is quantify how  much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+### Procesing the data
+
+Loading the data
+
+```{r}
+library(caret)
+dataTrain <- read.csv("C:/Users/digarcia/Desktop/Cursos Loreal/Data Science John Hopkins/Practical machine learning/pml-training.csv")
+dataTest <- read.csv("C:/Users/digarcia/Desktop/Cursos Loreal/Data Science John Hopkins/Practical machine learning/pml-testing.csv")
+```
+
+### Exploratory data analysis
+
+I will start by looking at the data provided. 
+
+```{r}
+dim(dataTrain)
+```
+
+```{r}
+ head(dataTrain)
+```
+
+```{r}
+str(dataTrain)
+```
+
+```{r}
+#Excluded due to the size
+#summary(dataTrain)
+```
+
+From among 160 variables present in the dataset, some variables have nearly zero variance whereas some contain a lot of NA terms which need to be excluded from the dataset. Moreover, other variables used for identification can also be removed, notably the time related data, since we wont use those.But before that, since I’ll be predicting classes in the testing dataset, I’ll split the training data into training and testing partitions and use the pml-testing.csv as a validation sample. Finally, I’ll use cross validation within the training partition to improve the model fit and then do an out-of-sample test with the testing partition.  
+
+#### 1. Partition and study of the near zero variance variables
+
+```{r}
+# Codes to partioning the training dataset into two: 70% for training and 30% for testing. I set seed to 13563 for reproducibility purposes. 
+set.seed(13563)
+inTrain <- createDataPartition(y=dataTrain$classe, p=0.7, list=FALSE)
+training <- dataTrain[inTrain, ]
+testing <- dataTrain[-inTrain, ]
+dim(training)
+dim(testing)
+```
+```{r}
+# Code to cheack possibles Near Zero Variance Variables:
+NZV_check <- nearZeroVar(training, saveMetrics = TRUE)
+NZV_check
+```
+
+```{r}
+# Codes to reset both training and testing sets without NZV:
+training <- training[, NZV_check$nzv==FALSE]
+dim(training)
+NZV_check2 <- nearZeroVar(testing, saveMetrics = TRUE)
+testing <- testing[, NZV_check2$nzv==FALSE]
+dim(testing)
+```
+#### 2. Cleaning the data 
+
+```{r}
+# Removing the first ID variable
+training <- training[c(-1)]
+testing <- testing[c(-1)]
+```
+
+```{r}
+# Cleaning the training dataset:
+temp_train <- training
+for (i in 1:length(training)) {
+  if(sum(is.na(training[, i]))/nrow(training)>=0.6) {
+    for (j in 1:length(temp_train)) {
+      if(length(grep(names(training[i]), names(temp_train)[j]))==1){
+        temp_train <- temp_train[, -j]
+      }
+    }
+  }
+}
+dim(temp_train)  
+  
+training <- temp_train
+rm(temp_train)
+```
+```{r}
+# Cleaning the testing dataset:
+temp_test <- testing
+for (i in 1:length(testing)) {
+  if(sum(is.na(testing[, i]))/nrow(testing)>=0.6) {
+    for (j in 1:length(temp_test)) {
+      if(length(grep(names(testing[i]), names(temp_test)[j]))==1){
+        temp_test <- temp_test[, -j]
+      }
+    }
+  }
+}
+dim(temp_test)  
+testing <- temp_test
+rm(temp_test)
+```
+#### 3. Visualising the data
+
+Now that we have cleaned the dataset off absolutely useless varibles, I will plot the outcome variable, that shows the frequency of each levels in the Training data. 
+
+```{r}
+library(ggplot2)
+p1 <- ggplot(training, aes(classe,pitch_forearm)) +
+geom_boxplot(aes(fill=classe))
+p1
+```
+
+```{r}
+p2 <- ggplot(training, aes(classe, magnet_arm_x)) +
+geom_boxplot(aes(fill=classe))
+p2
+```
+
+### Prediction model selection
+
+We will use 3 methods to model the training set and thereby choose the one having the best accuracy to predict the outcome variable in the testing set. The methods are Decision Tree, Random Forest and Generalized Boosted Model.
+
+#### 1. Decision Tree
+
+```{r}
+set.seed(13563)
+modelFitDT <- rpart(classe ~., data = training, method = "class")
+fancyRpartPlot(modelFitDT)
+```
+
+```{r}
+# Cross validating the model:
+predictFitDT <- predict(modelFitDT, testing, type = "class")
+```
+
+```{r}
+# To check the accuracy:
+accuracy_FitDT <- confusionMatrix(predictFitDT, testing$classe)  
+accuracy_FitDT
+```
+
+The model accuracy rate is 0.8731. Not a bad one, but less than Random Forest's. Again, in order to facilitate the visualization, a plot is needed.
+
+```{r}
+plot(accuracy_FitDT$table, col = accuracy_FitDT$byClass, main = paste("Decision Tree Algorithm Accuracy =", round(accuracy_FitDT$overall['Accuracy'], 4)))
+```
+
+#### 2. Random Forest
+
+```{r}
+library(randomForest)
+set.seed(13563)
+modelFitRF <- randomForest(classe~., data = training)
+```
+
+```{r}
+# Cross validating the model:
+predictFitRF <- predict(modelFitRF, testing, type = "class")
+```
+
+```{r}
+# To check the accuracy:
+accuracy_FitRF <- confusionMatrix(predictFitRF, testing$classe)
+accuracy_FitRF
+```
+
+The accuracy of the Random Forest model is 0.9983, a very good one. To facilitate the visualization, I intend to plot it.
+
+
+```{r}
+plot(modelFitRF, main = "Random Forest Algorithm")
+```
+
+```{r}
+plot(accuracy_FitRF$table, col = accuracy_FitRF$byClass, main = paste("Random Forest Algorithm Accuracy =", round(accuracy_FitRF$overall['Accuracy'], 4)))
+```
+
+#### 3. Generalized Boosted Model
+
+```{r}
+library(plyr)
+set.seed(13563)
+FitControlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modelFitGBM <- train(classe~., data = training, method = "gbm", trControl = FitControlGBM, verbose = FALSE)
+FinalmodelFitGBM <- modelFitGBM$finalModel
+```
+
+```{r}
+# Cross validating the model:
+predictFitGBM <- predict(modelFitGBM, newdata = testing)
+```
+
+```{r}
+# To check the accuracy:
+accuracy_FitGBM <- confusionMatrix(predictFitGBM, testing$classe)
+accuracy_FitGBM
+```
+
+The accuracy of the model is rated at 0.9966. Although, comparing to Random Forest's 0.9983 it's not the best model. Once again, a plot to facilitate the visualization.
+
+```{r}
+plot(modelFitGBM, ylim = c(0.9, 1))
+```
+
+### Conclusion
+
+As Random Forest offers the maximum accuracy of 99.75%, we will go with Random Forest Model to predict our test data class variable.
+
+```{r}
+prediction_results <- predict(modelFitRF, testing, type = "class")
+prediction_results
+```
